@@ -1,0 +1,9 @@
+[package]
+name = "checkdir"
+version = "0.1.0"
+authors = ["josler <j.osler@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+rayon = "1.0"
+rust-crypto = "0.2.36"
