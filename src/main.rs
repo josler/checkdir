@@ -7,7 +7,7 @@ use crypto::digest::Digest;
 use crypto::md5::Md5;
 use rayon::prelude::*;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 fn main() -> Result<(), SyncError> {
@@ -57,21 +57,38 @@ fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), 
         .filter_entry(|e| !should_skip(e))
         .filter_map(|e| e.ok())
     {
-        if !entry.path().is_dir() {
+        if entry.file_type().is_file() {
             results.push(FileListElement::new(entry.path().to_path_buf()));
         }
     }
     Ok(())
 }
 
+// check if we should skip top level entries
 fn should_skip(entry: &walkdir::DirEntry) -> bool {
-    is_top_level(".git", entry) || is_top_level("tmp", entry) || is_top_level("vendor", entry)
+    let filename = entry.file_name().to_str();
+
+    // top level directory excludes
+    if entry.depth() == 1 && entry.file_type().is_dir() {
+        return dir_is_name(".git", filename)
+            || dir_is_name("tmp", filename)
+            || dir_is_name("log", filename)
+            || dir_is_name(".idea", filename)
+            || dir_is_name("avatars", filename);
+    }
+
+    // specific file excludes
+    path_ends_with("spec/examples.txt", entry.path())
 }
 
-fn is_top_level(dir: &str, entry: &walkdir::DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| s.starts_with(dir))
-        .unwrap_or(false)
+// exact name of directory
+fn dir_is_name(dir: &str, filename: Option<&str>) -> bool {
+    match filename {
+        Some(name) => name == dir,
+        None => false,
+    }
+}
+
+fn path_ends_with(dir: &str, path: &Path) -> bool {
+    path.ends_with(dir)
 }
