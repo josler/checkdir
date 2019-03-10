@@ -8,7 +8,6 @@ pub struct SyncError(Box<ErrorKind>);
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    PathWalkError,
     Prefix(StripPrefixError),
     IO(ioError),
 }
@@ -36,7 +35,6 @@ impl fmt::Display for SyncError {
 impl Error for SyncError {
     fn description(&self) -> &str {
         match *self.kind() {
-            ErrorKind::PathWalkError => "error walking path",
             ErrorKind::IO(ref err) => err.description(),
             ErrorKind::Prefix(ref err) => err.description(),
         }

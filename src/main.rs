@@ -7,17 +7,16 @@ use crypto::digest::Digest;
 use crypto::md5::Md5;
 use rayon::prelude::*;
 use std::env;
-use std::fs;
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 fn main() -> Result<(), SyncError> {
     let args: Vec<String> = env::args().skip(1).collect();
     let path = PathBuf::from(&args[0]);
-    let mut stack = vec![path];
 
     let mut results = Vec::new();
 
-    visit_stack(&mut stack, &mut results)?;
+    visit_stack(path, &mut results)?;
 
     // parallel sort all the file paths
     results.par_sort_by(|a, b| a.path.cmp(&b.path));
@@ -41,7 +40,7 @@ fn main() -> Result<(), SyncError> {
         all_file_md5s.push_str(&format!("{:} {:}\n", v.checksum, path));
     });
 
-    // println!("{:}", all_file_md5s);
+    println!("{:}", all_file_md5s);
 
     // Calculate the final md5 hash from the file list
     let mut hasher = Md5::new();
@@ -51,37 +50,16 @@ fn main() -> Result<(), SyncError> {
     Ok(())
 }
 
-fn visit_stack(
-    stack: &mut Vec<PathBuf>,
-    results: &mut Vec<FileListElement>,
-) -> Result<(), SyncError> {
-    loop {
-        if stack.is_empty() {
-            break Ok(());
-        }
-        // return if nothing on stack
-        let path = stack
-            .pop()
-            .ok_or(SyncError::new(ErrorKind::PathWalkError))?;
-        if path.is_dir() {
-            for entry in fs::read_dir(path)? {
-                let entry = entry?;
-                let entry_path = entry.path();
-                // TODO: make the ignore logic better...
-                if entry_path.ends_with(".git") {
-                    continue;
-                }
-                if entry_path.is_dir() {
-                    stack.push(entry_path);
-                } else {
-                    let metadata = entry_path.symlink_metadata()?;
-                    if metadata.file_type().is_symlink() {
-                        // TODO: decide what to do with symlinks, should we just ignore them?
-                        continue;
-                    }
-                    results.push(FileListElement::new(entry_path));
-                }
-            }
+fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), SyncError> {
+    // not following symlinks
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        // TODO: skip excluded
+        // if entry.path().ends_with(".git") {
+        //     continue;
+        // }
+        if !entry.path().is_dir() {
+            results.push(FileListElement::new(entry.path().to_path_buf()));
         }
     }
+    Ok(())
 }
