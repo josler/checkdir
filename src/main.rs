@@ -40,7 +40,7 @@ fn main() -> Result<(), SyncError> {
         all_file_md5s.push_str(&format!("{:} {:}\n", v.checksum, path));
     });
 
-    println!("{:}", all_file_md5s);
+    // println!("{:}", all_file_md5s);
 
     // Calculate the final md5 hash from the file list
     let mut hasher = Md5::new();
@@ -52,14 +52,26 @@ fn main() -> Result<(), SyncError> {
 
 fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), SyncError> {
     // not following symlinks
-    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-        // TODO: skip excluded
-        // if entry.path().ends_with(".git") {
-        //     continue;
-        // }
+    for entry in WalkDir::new(path)
+        .into_iter()
+        .filter_entry(|e| !should_skip(e))
+        .filter_map(|e| e.ok())
+    {
         if !entry.path().is_dir() {
             results.push(FileListElement::new(entry.path().to_path_buf()));
         }
     }
     Ok(())
+}
+
+fn should_skip(entry: &walkdir::DirEntry) -> bool {
+    is_top_level(".git", entry) || is_top_level("tmp", entry) || is_top_level("vendor", entry)
+}
+
+fn is_top_level(dir: &str, entry: &walkdir::DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| s.starts_with(dir))
+        .unwrap_or(false)
 }
