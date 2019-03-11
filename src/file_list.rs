@@ -22,11 +22,9 @@ impl<'a> FileListElement {
     }
 
     pub fn calc_md5(&mut self) {
-        let mut file =
-            fs::File::open(&self.path).expect(&format!("failed to open file {:?}", self.path));
+        let mut file = fs::File::open(&self.path).expect("failed to open file");
         let mut buf = Vec::new();
-        file.read_to_end(&mut buf)
-            .expect(&format!("failed to read file {:?}", self.path));
+        file.read_to_end(&mut buf).expect("failed to read file");
 
         let mut hasher = Md5::new();
         hasher.input(&buf);
