@@ -1,22 +1,33 @@
+mod cache;
 mod errors;
 mod file_list;
 
+use crate::cache::*;
 use crate::errors::{ErrorKind, SyncError};
 use crate::file_list::FileListElement;
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 fn main() -> Result<(), SyncError> {
     let args: Vec<String> = env::args().skip(1).collect();
     let path = PathBuf::from(&args[0]);
-
+    let cache_prefix = &args[0];
     let mut results = Vec::new();
+    let canonical = path.canonicalize()?;
+    let cache_dir = PathBuf::from("/tmp/checkdir_cache");
+    fs::create_dir_all(&cache_dir).unwrap();
+    let cache_path = cache_dir.join(canonical.file_name().unwrap());
 
-    visit_stack(path, &mut results)?;
+    let mut cache: HashMap<String, FileListElement> = read_cache(&cache_path.to_str().unwrap())?;
+
+    visit_stack(&mut cache, path, cache_prefix, &mut results)?;
 
     // parallel sort all the file paths
     results.par_sort_by(|a, b| a.path.cmp(&b.path));
@@ -25,7 +36,9 @@ fn main() -> Result<(), SyncError> {
     results = results
         .into_par_iter()
         .map(|mut v| {
-            v.calc_md5();
+            if !cache.contains_key(v.cache_key()) {
+                v.calc_md5();
+            }
             v
         })
         .collect();
@@ -35,7 +48,7 @@ fn main() -> Result<(), SyncError> {
     let mut all_file_md5s = String::new();
     results.iter().for_each(|v| {
         let path = v
-            .path_without_prefix(&args[0])
+            .path_without_prefix(cache_prefix)
             .expect("failed to get path without prefix");
         all_file_md5s.push_str(&format!("{:} {:}\n", v.checksum, path));
     });
@@ -47,10 +60,17 @@ fn main() -> Result<(), SyncError> {
     hasher.input_str(&all_file_md5s);
 
     println!("{:}", hasher.result_str());
+
+    write_cache(&cache_path.to_str().unwrap(), results)?;
     Ok(())
 }
 
-fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), SyncError> {
+fn visit_stack(
+    cache: &mut HashMap<String, FileListElement>,
+    path: PathBuf,
+    prefix: &str,
+    results: &mut Vec<FileListElement>,
+) -> Result<(), SyncError> {
     // not following symlinks
     for entry in WalkDir::new(path)
         .into_iter()
@@ -58,7 +78,35 @@ fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), 
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() {
-            results.push(FileListElement::new(entry.path().to_path_buf()));
+            let mut element = FileListElement::new(entry.path().to_path_buf(), prefix);
+            let metadata = entry.metadata().unwrap();
+
+            // If our cache has this path, and it's still the same size and modified time of the cache,
+            // then we can reuse it
+            if cache.contains_key(element.cache_key()) {
+                let found = &cache[element.cache_key()];
+                if found.size == metadata.len()
+                    && found.modified == metadata.modified().unwrap()
+                    && found.permissions_mode == metadata.permissions().mode()
+                {
+                    // element = found.clone();
+                    element.size = found.size;
+                    element.modified = found.modified;
+                    element.permissions_mode = found.permissions_mode;
+                    element.checksum = found.checksum.clone();
+                    results.push(element);
+                    continue;
+                } else {
+                    // mismatch of metadata or modified
+                    cache.remove(element.cache_key());
+                }
+            }
+
+            // otherwise we should regenerate it
+            element.size = metadata.len();
+            element.modified = metadata.modified().unwrap();
+            element.permissions_mode = metadata.permissions().mode();
+            results.push(element);
         }
     }
     Ok(())

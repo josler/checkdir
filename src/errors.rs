@@ -10,6 +10,7 @@ pub struct SyncError(Box<ErrorKind>);
 pub enum ErrorKind {
     Prefix(StripPrefixError),
     IO(ioError),
+    CacheError,
 }
 
 impl SyncError {
@@ -37,6 +38,7 @@ impl Error for SyncError {
         match *self.kind() {
             ErrorKind::IO(ref err) => err.description(),
             ErrorKind::Prefix(ref err) => err.description(),
+            ErrorKind::CacheError => "Failed to read cache",
         }
     }
 }
