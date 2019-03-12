@@ -1,3 +1,4 @@
+mod config;
 mod errors;
 mod file_list;
 
@@ -14,9 +15,11 @@ fn main() -> Result<(), SyncError> {
     let args: Vec<String> = env::args().skip(1).collect();
     let path = PathBuf::from(&args[0]);
 
+    let config = config::Config::new(&path);
+
     let mut results = Vec::new();
 
-    visit_stack(path, &mut results)?;
+    visit_stack(path, &mut results, &config)?;
 
     // parallel sort all the file paths
     results.par_sort_by(|a, b| a.path.cmp(&b.path));
@@ -50,11 +53,15 @@ fn main() -> Result<(), SyncError> {
     Ok(())
 }
 
-fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), SyncError> {
+fn visit_stack(
+    path: PathBuf,
+    results: &mut Vec<FileListElement>,
+    config: &config::Config,
+) -> Result<(), SyncError> {
     // not following symlinks
     for entry in WalkDir::new(path)
         .into_iter()
-        .filter_entry(|e| !should_skip(e))
+        .filter_entry(|e| !should_skip(e, config))
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() {
@@ -65,20 +72,18 @@ fn visit_stack(path: PathBuf, results: &mut Vec<FileListElement>) -> Result<(), 
 }
 
 // check if we should skip top level entries
-fn should_skip(entry: &walkdir::DirEntry) -> bool {
+fn should_skip(entry: &walkdir::DirEntry, config: &config::Config) -> bool {
     let filename = entry.file_name().to_str();
 
     // top level directory excludes
     if entry.depth() == 1 && entry.file_type().is_dir() {
-        return dir_is_name(".git", filename)
-            || dir_is_name("tmp", filename)
-            || dir_is_name("log", filename)
-            || dir_is_name(".idea", filename)
-            || dir_is_name("avatars", filename);
+        return config.ignore_dirs.iter().any(|d| dir_is_name(&d, filename));
     }
 
-    // specific file excludes
-    path_ends_with("spec/examples.txt", entry.path())
+    config
+        .ignore_paths
+        .iter()
+        .any(|d| path_ends_with(d, entry.path()))
 }
 
 // exact name of directory
