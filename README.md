@@ -4,9 +4,9 @@ Algorithm is:
 
 * Get each file
 * Sort by path
-* For each file, read and calculate md5
-* Prepare overall file to calculate with format `$md5 $relative_filename\n`
-* Md5 this for the result
+* For each file, read and calculate checksum using FxHash
+* Prepare overall file to calculate with format `$checksum $relative_filename\n`
+* Md5 this for the result checksum (easier to read).
 
 It's pretty fast, and largely CPU bound:
 

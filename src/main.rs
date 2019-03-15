@@ -24,31 +24,32 @@ fn main() -> Result<(), SyncError> {
     // parallel sort all the file paths
     results.par_sort_by(|a, b| a.path.cmp(&b.path));
 
-    // parallel calculate md5 sums for all files
+    // parallel calculate checksums for all files
     results = results
         .into_par_iter()
         .map(|mut v| {
-            v.calc_md5();
+            v.calculate_checksum();
             v
         })
         .collect();
 
-    // write all the file paths and md5s into a single string buffer. We can't
+    // write all the file paths and checksums into a single string buffer. We can't
     // parallelise this as we're mutating a single resource
-    let mut all_file_md5s = String::new();
+    let mut all_file_checksums = String::new();
     results.iter().for_each(|v| {
         let path = v
             .path_without_prefix(&args[0])
             .expect("failed to get path without prefix");
-        all_file_md5s.push_str(&format!("{:} {:}\n", v.checksum, path));
+        all_file_checksums.push_str(&format!("{:} {:}\n", v.checksum, path));
     });
 
-    // println!("{:}", all_file_md5s);
+    //println!("{:}", all_file_checksums);
 
     // Calculate the final md5 hash from the file list
+    // use md5 instead of FxHash as it's a nicer output format
+    // this isn't anywhere close to a bottleneck
     let mut hasher = Md5::new();
-    hasher.input_str(&all_file_md5s);
-
+    hasher.input_str(&all_file_checksums);
     println!("{:}", hasher.result_str());
     Ok(())
 }
