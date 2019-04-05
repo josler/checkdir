@@ -6,14 +6,30 @@ use crate::errors::{ErrorKind, SyncError};
 use crate::file_list::FileListElement;
 use crypto::digest::Digest;
 use crypto::md5::Md5;
+use gumdrop::Options;
 use rayon::prelude::*;
-use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+#[derive(Debug, Options)]
+struct CommandOptions {
+    #[options(help = "Print the help message")]
+    help: bool,
+
+    #[options(free)]
+    directory: Option<String>,
+
+    #[options(short = "f", help = "show checksums per file")]
+    per_file: bool,
+}
+
 fn main() -> Result<(), SyncError> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    let path = PathBuf::from(&args[0]);
+    let opts = CommandOptions::parse_args_default_or_exit();
+    let dir_name = &opts.directory.unwrap_or_else(|| {
+        println!("{}", CommandOptions::usage());
+        std::process::exit(1);
+    });
+    let path = PathBuf::from(&dir_name);
 
     let config = config::Config::new(&path);
 
@@ -38,12 +54,15 @@ fn main() -> Result<(), SyncError> {
     let mut all_file_checksums = String::new();
     results.iter().for_each(|v| {
         let path = v
-            .path_without_prefix(&args[0])
+            .path_without_prefix(&dir_name)
             .expect("failed to get path without prefix");
         all_file_checksums.push_str(&format!("{:} {:}\n", v.checksum, path));
     });
 
-    //println!("{:}", all_file_checksums);
+    if opts.per_file {
+        println!("{:}", all_file_checksums);
+        return Ok(());
+    }
 
     // Calculate the final md5 hash from the file list
     // use md5 instead of FxHash as it's a nicer output format

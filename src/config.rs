@@ -1,4 +1,3 @@
-use dirs;
 use serde_derive::*;
 use serde_json;
 use std::fs;
